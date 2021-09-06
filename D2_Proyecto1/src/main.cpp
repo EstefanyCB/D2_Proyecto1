@@ -3,8 +3,8 @@
 //BE3015: Electronica Digital 2
 //Estefany Eleuteria Batz Cantor
 //Proyecto 1
-//Estado: Parte1-4. Sensor de temperatura y displays
-//*******************************************************************
+//Estado: Parte1, 2 y 3 funcionales
+//******************************************************************************************
 
 //******************************************************************************************
 //Librerias
@@ -19,6 +19,7 @@
 
 //Boton
 #define Boton 22
+
 //Pines de salida del Led RGB
 #define LedR 19
 #define LedG 21
@@ -51,17 +52,23 @@
 #define Unidad 27
 #define Decima 26
 
+//Para el timer
+#define prescaler 80
+
 //******************************************************************************************
 //Prototipo de funciones
 //******************************************************************************************
-void ConfiguracionSLPWM(void);
+void ConfiguracionSLPWM(void); //PWM de los leds y el servo
 float ReadVoltage(int ADC_Raw);
-void ConfigurarLedsServo(void);
-void IRAM_ATTR ISRLedyServo();
+void ConfigurarLedsServo(void); //Configuracion del led y el servo
+void IRAM_ATTR ISRLedyServo();  //Interrupcion
+void SensorTemperaturaLedServo(void);
 
 //******************************************************************************************
 //Variables Globales
 //******************************************************************************************
+
+//Sensor de temperatura
 float Temperatura = 0.0; //Para la temperatura medida
 float Voltaje = 0.0;
 int ValorTemp = 0; //Para almacenar la conversion ADC
@@ -69,8 +76,8 @@ int ValorTemp = 0; //Para almacenar la conversion ADC
 long lastTime;
 int sampleTime = 150;
 
-float TempActual = 0.0; //Temperatura que se toma al presionar el boton
 int StateBoton = 0;
+
 //******************************************************************************************
 //Configuracion
 //******************************************************************************************
@@ -81,7 +88,7 @@ void setup()
   lastTime = millis();
 
   ConfiguracionSLPWM();
-  ConfigurarLedsServo();
+  SensorTemperaturaLedServo();
 
   pinMode(Boton, INPUT_PULLDOWN);
 
@@ -99,23 +106,7 @@ void loop()
   if (millis() - lastTime >= sampleTime)
   {
     lastTime = millis();
-
-    //Paso 1 Temperatura. Leer la entrada analogica
-    ValorTemp = analogRead(LM35); //Se almacena el valor entre 0-4095 que representa la temperatura
-    //El voltaje que se lee en en el pin es ValorTemp=(ValorLeido)*3.3V/4095
-    //En el LM35 1C equivale a 10mV, entonces temperatura=VoltajePin/10mV
-
-    Voltaje = ReadVoltage(ValorTemp);
-    Temperatura = Voltaje / 10.0;
-
-    //Serial.print("Temperatura:");
-    Serial.print(Temperatura);
-    //Serial.print(" , ");
-    //Serial.print("ValorTomado:");
-    //Serial.print(TempActual);
-    Serial.println(analogReadMilliVolts(LM35) / 10);
-
-    ConfigurarLedsServo();
+    SensorTemperaturaLedServo(); //Funcion que se encarga de leer la temperatura y sincronizar el led+servo
   }
 }
 
@@ -127,6 +118,58 @@ float ReadVoltage(int ADC_Raw)
   esp_adc_cal_characteristics_t adc_chars;
   esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_11db, ADC_WIDTH_12Bit, 1100, &adc_chars);
   return (esp_adc_cal_raw_to_voltage(ADC_Raw, &adc_chars));
+}
+
+//******************************************************************************************
+//Configuracion del sensor de Temperatura
+//******************************************************************************************
+void SensorTemperaturaLedServo(void)
+{
+  if (digitalRead(Boton) == HIGH)
+  {
+    //Paso 1 Temperatura. Leer la entrada analogica
+    ValorTemp = analogReadMilliVolts(LM35); //Se almacena el valor entre 0-4095 que representa la temperatura
+    //El voltaje que se lee en en el pin es ValorTemp=(ValorLeido)*3.3V/4095
+    //En el LM35 1C equivale a 10mV, entonces temperatura=VoltajePin/10mV
+    Temperatura = ValorTemp / 10.0;
+    Serial.print(Temperatura);
+    Serial.print("; ");
+    
+    ConfigurarLedsServo(); //Dependiendo del valor de la temperatura se sincroniza el LED y el Servo
+  }
+}
+
+//******************************************************************************************
+//Configuracion de Leds y Servo dependiendo del valor de Temperatura
+//******************************************************************************************
+void ConfigurarLedsServo(void)
+{
+  if (Temperatura < 37.0) //Rango para el Led Verde
+  {
+    Serial.println("Primer rango");
+    ledcWrite(PWMLedR, 200);   //Led Red se enciende segun su DutyCycle
+    ledcWrite(PWMLedG, 0); //Apagada
+    ledcWrite(PWMLedB, 0);   //Apagada
+    ledcWrite(PWMServo, 8); //Los rangos del servo son de 7-32 ya que se utilizo una resolucion de 8
+  }
+
+  else if (Temperatura >= 37.0 && Temperatura < 37.5) //Rango para el Led Amarillo
+  {
+    Serial.println("Segundo Rango");
+    ledcWrite(PWMLedR, 0); //Led Red se enciende segun su DutyCycle
+    ledcWrite(PWMLedG, 255);   //Apagada
+    ledcWrite(PWMLedB, 0);   //Apagada
+    ledcWrite(PWMServo, 15);
+  }
+
+  else if (Temperatura >= 37.5) //Rango para el Led Rojo
+  {
+    Serial.println("Tercer Rango");
+    ledcWrite(PWMLedR, 0);   //Led Red se enciende segun su DutyCycle
+    ledcWrite(PWMLedG, 0);   //Apagada
+    ledcWrite(PWMLedB, 255); //Apagada
+    ledcWrite(PWMServo, 32);
+  }
 }
 
 //******************************************************************************************
@@ -150,57 +193,4 @@ void ConfiguracionSLPWM(void)
   ledcAttachPin(LedR, PWMLedR); //Aqui es la señal del PWM, entonces seleccionamos el pin
   ledcAttachPin(LedG, PWMLedG); //Aqui es la señal del PWM, entonces seleccionamos el pin
   ledcAttachPin(LedB, PWMLedB); //Aqui es la señal del PWM, entonces seleccionamos el pin
-}
-
-//******************************************************************************************
-//Configuracion de Leds y Servo dependiendo del valor de Temperatura
-//******************************************************************************************
-void ConfigurarLedsServo(void)
-{
-  if (digitalRead(Boton) == HIGH)
-
-  {
-    StateBoton = HIGH; //El estado de B3 es High
-  }
-
-  else if (StateBoton == HIGH)
-  {
-    StateBoton = LOW;
-    TempActual = digitalRead(Temperatura);
-    Serial.println(TempActual);
-  }
-
-  if (TempActual < 37.0) //Rango para el Led Verde
-  {
-    Serial.println("Primer rango");
-  }
-
-  else if (TempActual >= 37.0 && TempActual < 37.5) //Rango para el Led Amarillo
-  {
-    Serial.println("Segundo Rango");
-  }
-
-  else if (TempActual >= 37.5) //Rango para el Led Rojo
-  {
-    Serial.println("Tercer Rango");
-  }
-}
-
-//******************************************************************************************
-//ISR Para leds y servo
-//******************************************************************************************
-void IRAM_ATTR ISRLedyServo()
-{
-  if (digitalRead(Boton) == HIGH)
-
-  {
-    StateBoton = HIGH; //El estado de B3 es High
-  }
-
-  else if (StateBoton == HIGH)
-  {
-    StateBoton = LOW;
-    TempActual = digitalRead(Temperatura);
-    Serial.println(TempActual);
-  }
 }
