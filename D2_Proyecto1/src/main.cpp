@@ -11,6 +11,7 @@
 //******************************************************************************************
 #include <Arduino.h>
 #include "esp_adc_cal.h"
+#include "Display7Seg.h"
 
 //******************************************************************************************
 //Definición de pines
@@ -39,15 +40,16 @@
 #define Servo 4 //salida del PWM
 
 //Pines del Display
-#define DisplayA 34
-#define DisplayB 39
-#define DisplayC 35
+#define DisplayA 17
+#define DisplayB 5
+#define DisplayC 32
 #define DisplayD 33
 #define DisplayE 25
 #define DisplayF 12
 #define DisplayG 13
-#define Displaydp 32
+#define Displaydp 16
 
+//Transistores
 #define Decena 14
 #define Unidad 27
 #define Decima 26
@@ -59,10 +61,16 @@
 //Prototipo de funciones
 //******************************************************************************************
 void ConfiguracionSLPWM(void); //PWM de los leds y el servo
-float ReadVoltage(int ADC_Raw);
+
 void ConfigurarLedsServo(void); //Configuracion del led y el servo
-void IRAM_ATTR ISRLedyServo();  //Interrupcion
 void SensorTemperaturaLedServo(void);
+
+void TempDisplay(void);
+
+void IRAM_ATTR TimerISR();
+
+void ConfigutacionTimer(void);
+float ReadVoltage(int ADC_Raw);
 
 //******************************************************************************************
 //Variables Globales
@@ -78,6 +86,26 @@ int sampleTime = 150;
 
 int StateBoton = 0;
 
+//Display 7 segmentos
+int VDecena = 0;
+int VUnidad = 0;
+int VDecima = 0;
+
+//Temporizador
+hw_timer_t * timer = NULL;
+int CTimer = 0;
+
+//******************************************************************************************
+//Interrupciones ISR
+//******************************************************************************************
+void IRAM_ATTR TimerISR(){
+  CTimer++;
+  if (CTimer >2)
+  {
+    CTimer = 0;
+  }
+}
+
 //******************************************************************************************
 //Configuracion
 //******************************************************************************************
@@ -87,15 +115,29 @@ void setup()
 
   lastTime = millis();
 
-  ConfiguracionSLPWM();
-  SensorTemperaturaLedServo();
-
   pinMode(Boton, INPUT_PULLDOWN);
 
   pinMode(LedB, OUTPUT);
   pinMode(LedR, OUTPUT);
   pinMode(LedG, OUTPUT);
   pinMode(Servo, OUTPUT);
+
+  ConfigutacionTimer();
+  ConfiguracionSLPWM();
+  SensorTemperaturaLedServo();
+
+
+  configurarDisplay(DisplayA, DisplayB, DisplayC, DisplayD, DisplayE, DisplayF, DisplayG, Displaydp);
+
+  pinMode(Decena, OUTPUT);
+  pinMode(Unidad, OUTPUT);
+  pinMode(Decima, OUTPUT);
+
+  digitalWrite(Decena, LOW);
+  digitalWrite(Unidad, LOW);
+  digitalWrite(Decima, LOW);
+
+  desplegar7Segmentos(0);
 }
 
 //******************************************************************************************
@@ -134,7 +176,7 @@ void SensorTemperaturaLedServo(void)
     Temperatura = ValorTemp / 10.0;
     Serial.print(Temperatura);
     Serial.print("; ");
-    
+
     ConfigurarLedsServo(); //Dependiendo del valor de la temperatura se sincroniza el LED y el Servo
   }
 }
@@ -144,25 +186,25 @@ void SensorTemperaturaLedServo(void)
 //******************************************************************************************
 void ConfigurarLedsServo(void)
 {
-  if (Temperatura < 37.0) //Rango para el Led Verde
+  if (Temperatura < 25.0) //Rango para el Led Verde
   {
     Serial.println("Primer rango");
-    ledcWrite(PWMLedR, 200);   //Led Red se enciende segun su DutyCycle
-    ledcWrite(PWMLedG, 0); //Apagada
+    ledcWrite(PWMLedR, 200); //Led Red se enciende segun su DutyCycle
+    ledcWrite(PWMLedG, 0);   //Apagada
     ledcWrite(PWMLedB, 0);   //Apagada
-    ledcWrite(PWMServo, 8); //Los rangos del servo son de 7-32 ya que se utilizo una resolucion de 8
+    ledcWrite(PWMServo, 8);  //Los rangos del servo son de 7-32 ya que se utilizo una resolucion de 8
   }
 
-  else if (Temperatura >= 37.0 && Temperatura < 37.5) //Rango para el Led Amarillo
+  else if (Temperatura >= 25.0 && Temperatura < 27.5) //Rango para el Led Amarillo
   {
     Serial.println("Segundo Rango");
-    ledcWrite(PWMLedR, 0); //Led Red se enciende segun su DutyCycle
-    ledcWrite(PWMLedG, 255);   //Apagada
+    ledcWrite(PWMLedR, 0);   //Led Red se enciende segun su DutyCycle
+    ledcWrite(PWMLedG, 255); //Apagada
     ledcWrite(PWMLedB, 0);   //Apagada
     ledcWrite(PWMServo, 15);
   }
 
-  else if (Temperatura >= 37.5) //Rango para el Led Rojo
+  else if (Temperatura >= 27.5) //Rango para el Led Rojo
   {
     Serial.println("Tercer Rango");
     ledcWrite(PWMLedR, 0);   //Led Red se enciende segun su DutyCycle
@@ -194,3 +236,41 @@ void ConfiguracionSLPWM(void)
   ledcAttachPin(LedG, PWMLedG); //Aqui es la señal del PWM, entonces seleccionamos el pin
   ledcAttachPin(LedB, PWMLedB); //Aqui es la señal del PWM, entonces seleccionamos el pin
 }
+
+//******************************************************************************************
+//Configuracion modulo PWM del servo
+//******************************************************************************************
+void ConfigutacionTimer(void)
+{
+  //Seleccionar el timer
+    //Fosc/prescaler = 80 000 000/ 1 000 000
+    //Tosc=1/Fosc=1 us
+  timer = timerBegin(0, prescaler, true);
+  
+  //Paso 3: Handler de la interrupcion
+  timerAttachInterrupt(timer, &TimerISR, true);
+  
+  //Paso 4: programacion de la alarma
+  timerAlarmWrite(timer, 5000, true);
+  
+  timerAlarmEnable(timer); //Inicialzacion de la alarma
+}
+
+//******************************************************************************************
+//Configuracion Temperatura de los display
+//******************************************************************************************
+void TempDisplay(void)
+{
+ int VTemp = Temperatura * 10;
+ VDecena = VTemp/100;
+
+ VTemp = VTemp - (VDecena*100);
+ VUnidad = VTemp/10;
+
+ VTemp = VTemp - (VUnidad * 10);
+ VDecima = VTemp;
+}
+
+//******************************************************************************************
+//Configuracion Temperatura de los display
+//******************************************************************************************
