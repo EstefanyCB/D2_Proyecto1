@@ -12,6 +12,17 @@
 #include <Arduino.h>
 #include "esp_adc_cal.h"
 #include "Display7Seg.h"
+/*#include "AdafruitIO_WiFi.h"  //esta es la librería de Adafruit
+
+//Adafruit.IO
+#define IO_USERNAME  "EsBatz"
+#define IO_KEY       "aio_lWcG42G3XvoZmC8IRW9tatg3uYtU"
+
+//Parte de WIFI
+#define WIFI_SSID "Batz" 
+#define WIFI_PASS "141994Jo"
+
+AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);*/
 
 //******************************************************************************************
 //Definición de pines
@@ -66,6 +77,7 @@ void ConfigurarLedsServo(void); //Configuracion del led y el servo
 void SensorTemperaturaLedServo(void);
 
 void TempDisplay(void);
+void ValoresDisplay(int CTimer);
 
 void IRAM_ATTR TimerISR();
 
@@ -92,15 +104,16 @@ int VUnidad = 0;
 int VDecima = 0;
 
 //Temporizador
-hw_timer_t * timer = NULL;
+hw_timer_t *timer = NULL;
 int CTimer = 0;
 
 //******************************************************************************************
 //Interrupciones ISR
 //******************************************************************************************
-void IRAM_ATTR TimerISR(){
+void IRAM_ATTR TimerISR()
+{
   CTimer++;
-  if (CTimer >2)
+  if (CTimer > 2)
   {
     CTimer = 0;
   }
@@ -126,7 +139,6 @@ void setup()
   ConfiguracionSLPWM();
   SensorTemperaturaLedServo();
 
-
   configurarDisplay(DisplayA, DisplayB, DisplayC, DisplayD, DisplayE, DisplayF, DisplayG, Displaydp);
 
   pinMode(Decena, OUTPUT);
@@ -149,6 +161,8 @@ void loop()
   {
     lastTime = millis();
     SensorTemperaturaLedServo(); //Funcion que se encarga de leer la temperatura y sincronizar el led+servo
+    TempDisplay();
+    ValoresDisplay(CTimer);
   }
 }
 
@@ -178,6 +192,7 @@ void SensorTemperaturaLedServo(void)
     Serial.print("; ");
 
     ConfigurarLedsServo(); //Dependiendo del valor de la temperatura se sincroniza el LED y el Servo
+    Serial.println("---------");
   }
 }
 
@@ -189,10 +204,10 @@ void ConfigurarLedsServo(void)
   if (Temperatura < 25.0) //Rango para el Led Verde
   {
     Serial.println("Primer rango");
-    ledcWrite(PWMLedR, 200); //Led Red se enciende segun su DutyCycle
+    ledcWrite(PWMLedR, 255); //Led Red se enciende segun su DutyCycle
     ledcWrite(PWMLedG, 0);   //Apagada
     ledcWrite(PWMLedB, 0);   //Apagada
-    ledcWrite(PWMServo, 8);  //Los rangos del servo son de 7-32 ya que se utilizo una resolucion de 8
+    ledcWrite(PWMServo, 9);  //Los rangos del servo son de 7-32 ya que se utilizo una resolucion de 8
   }
 
   else if (Temperatura >= 25.0 && Temperatura < 27.5) //Rango para el Led Amarillo
@@ -243,16 +258,16 @@ void ConfiguracionSLPWM(void)
 void ConfigutacionTimer(void)
 {
   //Seleccionar el timer
-    //Fosc/prescaler = 80 000 000/ 1 000 000
-    //Tosc=1/Fosc=1 us
+  //Fosc/prescaler = 80 000 000/ 1 000 000
+  //Tosc=1/Fosc=1 us
   timer = timerBegin(0, prescaler, true);
-  
+
   //Paso 3: Handler de la interrupcion
   timerAttachInterrupt(timer, &TimerISR, true);
-  
+
   //Paso 4: programacion de la alarma
-  timerAlarmWrite(timer, 5000, true);
-  
+  timerAlarmWrite(timer, 15, true);
+
   timerAlarmEnable(timer); //Inicialzacion de la alarma
 }
 
@@ -261,16 +276,57 @@ void ConfigutacionTimer(void)
 //******************************************************************************************
 void TempDisplay(void)
 {
- int VTemp = Temperatura * 10;
- VDecena = VTemp/100;
+  //int VTemp = Temperatura * 10;
+  VDecena = Temperatura / 10;
+  Serial.println("Decena");
+  Serial.println(VDecena);
 
- VTemp = VTemp - (VDecena*100);
- VUnidad = VTemp/10;
+  // VTemp = VTemp - (VDecena * 100);
+  VUnidad = Temperatura - (VDecena * 10);
+  Serial.println("Unidad");
+  Serial.println(VUnidad);
 
- VTemp = VTemp - (VUnidad * 10);
- VDecima = VTemp;
+  //VTemp = VTemp - (VUnidad * 10);
+  VDecima = (Temperatura * 10) - (VDecena * 100) - (VUnidad * 10);
+  Serial.println("Decima");
+  Serial.println(VDecima);
 }
 
 //******************************************************************************************
 //Configuracion Temperatura de los display
 //******************************************************************************************
+void ValoresDisplay(int CTimer)
+{
+  if (CTimer == 0) //Decena
+  {
+    digitalWrite(Decena, HIGH);
+    digitalWrite(Unidad, LOW);
+    digitalWrite(Decima, LOW);
+    desplegarPunto(0);
+    desplegar7Segmentos(VDecena);
+    Serial.println("Valor de primer display");
+    Serial.println(VDecena);
+  }
+
+  else if (CTimer == 1) //Unidad
+  {
+    digitalWrite(Decena, LOW);
+    digitalWrite(Unidad, HIGH);
+    digitalWrite(Decima, LOW);
+    desplegarPunto(1);
+    desplegar7Segmentos(VUnidad);
+    Serial.println("Valor de segundo display");
+    Serial.println(VUnidad);
+  }
+
+  else if (CTimer == 2) //Decimal
+  {
+    digitalWrite(Decena, LOW);
+    digitalWrite(Unidad, LOW);
+    digitalWrite(Decima, HIGH);
+    desplegarPunto(0);
+    desplegar7Segmentos(VDecima);
+    Serial.println("Valor de tercer display");
+    Serial.println(VDecima);
+  }
+}
