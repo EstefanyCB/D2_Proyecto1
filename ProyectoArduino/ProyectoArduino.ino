@@ -3,7 +3,7 @@
 //BE3015: Electronica Digital 2
 //Estefany Eleuteria Batz Cantor
 //Proyecto 1
-//Estado: Final
+//Estado: Parte1, 2 y 3 funcionales
 //******************************************************************************************
 
 //******************************************************************************************
@@ -12,23 +12,23 @@
 #include <Arduino.h>
 #include "esp_adc_cal.h"
 #include "Display7Seg.h"
-#include "AdafruitIO_WiFi.h" //esta es la librería de Adafruit
+#include "AdafruitIO_WiFi.h"  //esta es la librería de Adafruit
 
 //Adafruit.IO
 #define IO_USERNAME  "EsBatz"
-#define IO_KEY       "aio_cwwl02U3Ih0jCEvS4JKE6yIFb7cM"
+#define IO_KEY       "aio_lWcG42G3XvoZmC8IRW9tatg3uYtU"
 
 //Parte de WIFI
-#define WIFI_SSID "Batz"
+#define WIFI_SSID "Batz" 
 #define WIFI_PASS "141994Jo"
 
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
-AdafruitIO_Feed *Termometro = io.feed("proyecto");
+AdafruitIO_Feed *termometro = io.feed("D2_Proyecto1");
 
 //******************************************************************************************
 //Definición de pines
 //******************************************************************************************
-#define LM35 35 //Senal del sensor de temperatura
+#define LM35 15 //Senal del sensor de temperatura
 
 //Boton
 #define Boton 22
@@ -108,8 +108,10 @@ int VDecima = 0;
 hw_timer_t *timer = NULL;
 int CTimer = 0;
 
+
 //Adaifruit
-//int count = 0;
+int count = 0;
+
 
 //******************************************************************************************
 //Interrupciones ISR
@@ -156,21 +158,19 @@ void setup()
   desplegar7Segmentos(0);
 
   //Adafruit
-  while (!Serial);
+  while(! Serial);
 
-  Serial.print("Conectando a Adafruit IO");
-  //Connect to io.adafruit.com
+  Serial.print("Connecting to Adafruit IO");
   io.connect();
 
-  //Se esperala conexión
-  while (io.status() < AIO_CONNECTED)
-  {
+  while(io.status() < AIO_CONNECTED) {
     Serial.print(".");
     delay(500);
   }
-  //Ya se ha conectado
+
   Serial.println();
   Serial.println(io.statusText());
+
 }
 
 //******************************************************************************************
@@ -178,9 +178,26 @@ void setup()
 //******************************************************************************************
 void loop()
 {
-  SensorTemperaturaLedServo(); //Funcion que se encarga de leer la temperatura y sincronizar el led+servo
-  TempDisplay();
-  ValoresDisplay(CTimer);
+  if (millis()- lastTime >= sampleTime){
+    io.run();
+ 
+    Serial.print("sending -> ");
+    Serial.println(count);
+    termometro->save(Temperatura);
+
+    count++;
+    
+    lastTime = millis();
+  }
+
+
+  if (millis() - lastTime >= sampleTime)
+  {
+    lastTime = millis();
+    SensorTemperaturaLedServo(); //Funcion que se encarga de leer la temperatura y sincronizar el led+servo
+    TempDisplay();
+    ValoresDisplay(CTimer);
+  }
 }
 
 //******************************************************************************************
@@ -200,14 +217,7 @@ void SensorTemperaturaLedServo(void)
 {
   if (digitalRead(Boton) == HIGH)
   {
-    StateBoton = HIGH;
-    Serial.println("---------");
-  }
-
-  else if (StateBoton == HIGH)
-  {
-    StateBoton = LOW;
-        //Paso 1 Temperatura. Leer la entrada analogica
+    //Paso 1 Temperatura. Leer la entrada analogica
     ValorTemp = analogReadMilliVolts(LM35); //Se almacena el valor entre 0-4095 que representa la temperatura
     //El voltaje que se lee en en el pin es ValorTemp=(ValorLeido)*3.3V/4095
     //En el LM35 1C equivale a 10mV, entonces temperatura=VoltajePin/10mV
@@ -216,14 +226,7 @@ void SensorTemperaturaLedServo(void)
     Serial.print("; ");
 
     ConfigurarLedsServo(); //Dependiendo del valor de la temperatura se sincroniza el LED y el Servo
-    
-    //Segmento de Adafruit IO
-    io.run();
-
-    // save count to the 'counter' feed on Adafruit IO
-    Serial.print("sending temperatura-> ");
-    Serial.println(Temperatura);
-    Termometro->save(Temperatura);
+    Serial.println("---------");
   }
 }
 
@@ -309,18 +312,18 @@ void TempDisplay(void)
 {
   //int VTemp = Temperatura * 10;
   VDecena = Temperatura / 10;
-  //Serial.println("Decena");
-  //Serial.println(VDecena);
+  Serial.println("Decena");
+  Serial.println(VDecena);
 
   // VTemp = VTemp - (VDecena * 100);
   VUnidad = Temperatura - (VDecena * 10);
-  //Serial.println("Unidad");
-  //Serial.println(VUnidad);
+  Serial.println("Unidad");
+  Serial.println(VUnidad);
 
   //VTemp = VTemp - (VUnidad * 10);
   VDecima = (Temperatura * 10) - (VDecena * 100) - (VUnidad * 10);
-  //Serial.println("Decima");
-  //Serial.println(VDecima);
+  Serial.println("Decima");
+  Serial.println(VDecima);
 }
 
 //******************************************************************************************
@@ -335,8 +338,8 @@ void ValoresDisplay(int CTimer)
     digitalWrite(Decima, LOW);
     desplegarPunto(0);
     desplegar7Segmentos(VDecena);
-    //Serial.println("Valor de primer display");
-    //Serial.println(VDecena);
+    Serial.println("Valor de primer display");
+    Serial.println(VDecena);
   }
 
   else if (CTimer == 1) //Unidad
@@ -346,8 +349,8 @@ void ValoresDisplay(int CTimer)
     digitalWrite(Decima, LOW);
     desplegarPunto(1);
     desplegar7Segmentos(VUnidad);
-    //Serial.println("Valor de segundo display");
-    //Serial.println(VUnidad);
+    Serial.println("Valor de segundo display");
+    Serial.println(VUnidad);
   }
 
   else if (CTimer == 2) //Decimal
@@ -357,7 +360,7 @@ void ValoresDisplay(int CTimer)
     digitalWrite(Decima, HIGH);
     desplegarPunto(0);
     desplegar7Segmentos(VDecima);
-    //Serial.println("Valor de tercer display");
-    //Serial.println(VDecima);
+    Serial.println("Valor de tercer display");
+    Serial.println(VDecima);
   }
 }
